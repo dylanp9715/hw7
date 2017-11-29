@@ -10,17 +10,18 @@
 #include <assert.h>
 #include "instruction_handler.h"
 
+uint32_t registers[8];
 
 void store_instruction(UArray_T seg_zero, uint32_t instruction, int open_index);
 uint32_t unpack_opcode(uint32_t instruction);
-int call_instruction(uint32_t opcode, UArray_T registers, Segments *s, 
+int call_instruction(uint32_t opcode, Segments *s, 
                       uint32_t curr_instruction);
-void perform_op(UArray_T registers, uint32_t a, uint32_t b, uint32_t c, 
+void perform_op(uint32_t a, uint32_t b, uint32_t c, 
                 uint32_t opcode);
-void perform_seg(UArray_T registers, uint32_t a, uint32_t b, uint32_t c, 
+void perform_seg(uint32_t a, uint32_t b, uint32_t c, 
                 uint32_t opcode, Segments *s);
 void perform_io(uint32_t value, uint32_t opcode);
-void unpack_one_register(uint32_t curr_instruction, UArray_T registers);
+void unpack_one_register(uint32_t curr_instruction);
 
 /* Purpose: Reads the instructions and stores them into segment zero
  * Arguments: File pointer and the filename
@@ -72,7 +73,7 @@ void store_instruction(UArray_T seg_zero, uint32_t instruction,
  * Returns: void
  */
 void run_instructions(Segments *s) {
-        UArray_T registers = UArray_new(8, sizeof(uint32_t));
+        //UArray_T registers = UArray_new(8, sizeof(uint32_t));
         int instruction_counter = 0;
         
         UArray_T seg_zero = Seq_get(s->segments, 0);
@@ -83,7 +84,7 @@ void run_instructions(Segments *s) {
         while (instruction_counter < UArray_length(seg_zero)) {
                 uint32_t curr_instruction = *program_counter;
                 uint32_t opcode = unpack_opcode(curr_instruction);
-                int new_counter = call_instruction(opcode, registers, s, 
+                int new_counter = call_instruction(opcode, s, 
                                                    curr_instruction);
                 if (new_counter != -1) {
                         instruction_counter = new_counter;
@@ -102,7 +103,7 @@ void run_instructions(Segments *s) {
  * Returns: The opcode
  */
 uint32_t unpack_opcode(uint32_t instruction) {
-        uint32_t opcode = Bitpack_getu(instruction, 4, 28);
+        uint32_t opcode = instruction >> 28;//Bitpack_getu(instruction, 4, 28);
         //printf("opcode: %d\n", opcode);
         return opcode;
 }
@@ -111,10 +112,10 @@ uint32_t unpack_opcode(uint32_t instruction) {
  * Arguments: The special instruction and the registers
  * Returns: void
  */
-void load_value(uint32_t curr_instruction, UArray_T registers) {
-        int num_regi = Bitpack_getu(curr_instruction, 3, 25);
-        *(uint32_t *)UArray_at(registers, num_regi) = 
-                        Bitpack_getu(curr_instruction, 25, 0);
+void load_value(uint32_t curr_instruction) {
+        int num_regi = curr_instruction << 4 >> 29;//Bitpack_getu(curr_instruction, 3, 25);
+        //*(uint32_t *)UArray_at(registers, num_regi) = 
+        registers[num_regi] = curr_instruction << 7 >> 7;//Bitpack_getu(curr_instruction, 25, 0);
 }
 
 /* Purpose: Calls certain functions depending on the opcode that is passed in
@@ -123,36 +124,36 @@ void load_value(uint32_t curr_instruction, UArray_T registers) {
  * Returns: Returns -1 if load program was not called and the value in register
  * c otherwise so that run_instructions can properly assign the program counter
  */
-int call_instruction(uint32_t opcode, UArray_T registers, Segments *s, 
+int call_instruction(uint32_t opcode, Segments *s, 
                      uint32_t curr_instruction) {
         int c = -1;
         if (opcode == 13) {
-                load_value(curr_instruction, registers);
+                load_value(curr_instruction);
         }
 
-        uint32_t ra = Bitpack_getu(curr_instruction, 3, 6);
-        uint32_t rb = Bitpack_getu(curr_instruction, 3, 3);
-        uint32_t rc = Bitpack_getu(curr_instruction, 3, 0);
+        uint32_t ra = curr_instruction << 23 >> 29;//Bitpack_getu(curr_instruction, 3, 6);
+        uint32_t rb = curr_instruction << 26 >> 29;//Bitpack_getu(curr_instruction, 3, 3);
+        uint32_t rc = curr_instruction << 29 >> 29;//Bitpack_getu(curr_instruction, 3, 0);
 
         if (opcode == 0 || (2 < opcode && opcode < 7)) {
-                perform_op(registers, ra, rb, rc, opcode);
+                perform_op(ra, rb, rc, opcode);
         }
         if ((0 < opcode && opcode < 3) || (7 < opcode && opcode < 10)) {
-                perform_seg(registers, ra, rb, rc, opcode, s);
+                perform_seg(ra, rb, rc, opcode, s);
         }
         if (opcode == 7) {
                 free_all_segments(s);
-                UArray_free(&(registers));
+                //UArray_free(&(registers));
                 free(s);
                 exit(0);
         }
         if (opcode == 10 || opcode == 11) {
-                uint32_t value_c = *(uint32_t *) UArray_at(registers, rc);
+                uint32_t value_c = registers[rc];//*(uint32_t *) UArray_at(registers, rc);
                 perform_io(value_c, opcode);
         }
         if (opcode == 12) {
-                uint32_t value_b = *(uint32_t *) UArray_at(registers, rb);
-                uint32_t value_c = *(uint32_t *) UArray_at(registers, rc);
+                uint32_t value_b = registers[rb];//*(uint32_t *) UArray_at(registers, rb);
+                uint32_t value_c = registers[rc];//*(uint32_t *) UArray_at(registers, rc);
                 load_program(s, value_b, value_c);
                 c = value_c;
         }
@@ -163,31 +164,34 @@ int call_instruction(uint32_t opcode, UArray_T registers, Segments *s,
  * Arguments: Registers and the number register for a, b, and c
  * Returns: void
  */
-void perform_op(UArray_T registers, uint32_t a, uint32_t b, uint32_t c, 
+void perform_op(uint32_t a, uint32_t b, uint32_t c, 
                 uint32_t opcode) {
-        uint32_t value_a = *(uint32_t *) UArray_at(registers, a);
-        uint32_t value_b = *(uint32_t *) UArray_at(registers, b);
-        uint32_t value_c = *(uint32_t *) UArray_at(registers, c);
+        uint32_t value_a = registers[a];//*(uint32_t *) UArray_at(registers, a);
+        uint32_t value_b = registers[b];//*(uint32_t *) UArray_at(registers, b);
+        uint32_t value_c = registers[c];//*(uint32_t *) UArray_at(registers, c);
         if (opcode == 0) {
-               *(uint32_t *) UArray_at(registers, a) = 
-                                conditional_move(value_a, value_b, value_c);
+               //*(uint32_t *) UArray_at(registers, a) = 
+               registers[a] = conditional_move(value_a, value_b, value_c);
         }
         else if (opcode == 3) {
                 uint32_t sum = add(value_b, value_c);
-                //printf("sum: %u, %u\n", value_b, value_c);
-                *(uint32_t *) UArray_at(registers, a) = sum;
+                registers[a] = sum;
+                //*(uint32_t *) UArray_at(registers, a) = sum;
         }
         else if (opcode == 4) {
                 uint32_t result = multiply(value_b, value_c);
-                *(uint32_t *) UArray_at(registers, a) = result;
+                registers[a] = result;
+                //*(uint32_t *) UArray_at(registers, a) = result;
         }
         else if (opcode == 5) {
                 uint32_t result = divide(value_b, value_c);
-                *(uint32_t *) UArray_at(registers, a) = result;
+                registers[a] = result;
+                //*(uint32_t *) UArray_at(registers, a) = result;
         }
         else {
                 uint32_t result = nand(value_b, value_c);
-                *(uint32_t *) UArray_at(registers, a) = result;
+                registers[a] = result;
+                //*(uint32_t *) UArray_at(registers, a) = result;
         }
 }
 
@@ -195,22 +199,22 @@ void perform_op(UArray_T registers, uint32_t a, uint32_t b, uint32_t c,
  * Arguments: Registers and the number register for a, b, and c
  * Returns: void
  */
-void perform_seg(UArray_T registers, uint32_t a, uint32_t b, uint32_t c, 
+void perform_seg(uint32_t a, uint32_t b, uint32_t c, 
                 uint32_t opcode, Segments *s) {
-        uint32_t value_a = *(uint32_t *) UArray_at(registers, a);
-        uint32_t value_b = *(uint32_t *) UArray_at(registers, b);
-        uint32_t value_c = *(uint32_t *) UArray_at(registers, c);
+        uint32_t value_a = registers[a];//*(uint32_t *) UArray_at(registers, a);
+        uint32_t value_b = registers[b];//*(uint32_t *) UArray_at(registers, b);
+        uint32_t value_c = registers[c];//*(uint32_t *) UArray_at(registers, c);
         if (opcode == 1) {
-                *(uint32_t *) UArray_at(registers, a) = 
-                                segment_load(s, value_b, value_c);  
+                //*(uint32_t *) UArray_at(registers, a) = 
+                registers[a] = segment_load(s, value_b, value_c);  
         }
         else if (opcode == 2) {
                 uint32_t segmentID = value_a;
                 segment_store(s, segmentID, value_b, value_c);
         }
         else if (opcode == 8) {
-                *(uint32_t *) UArray_at(registers, b) = 
-                                map_segment(s, value_c);
+                //*(uint32_t *) UArray_at(registers, b) = 
+                registers[b] = map_segment(s, value_c);
         }
         else {
                 unmap_segment(s, value_c);
