@@ -21,7 +21,7 @@ void perform_op(uint32_t a, uint32_t b, uint32_t c,
                 uint32_t opcode);
 void perform_seg(uint32_t a, uint32_t b, uint32_t c, 
                 uint32_t opcode, Segments *s);
-void perform_io(uint32_t value, uint32_t opcode);
+void perform_io(uint32_t value, uint32_t opcode, uint32_t c);
 void unpack_one_register(uint32_t curr_instruction);
 
 /* Purpose: Reads the instructions and stores them into segment zero
@@ -112,7 +112,7 @@ void run_instructions(Segments *s) {
                 }
                 //printf("instruction_counter: %d\n", instruction_counter);
                 // printf("seg_size: %d\n", seg_size);
-                //printf("curr_instruction2: %x\n", seg_zero[instruction_counter ]);
+                //printf("curr_instruction2: %x\n", seg_zero[instruction_counter]);
                 //program_counter = (uint32_t *) UArray_at(seg_zero, 
                 //                                     instruction_counter);
                 //program_counter = seg_zero[instruction_counter];
@@ -170,7 +170,7 @@ int call_instruction(uint32_t opcode, Segments *s,
         }
         if (opcode == 10 || opcode == 11) {
                 uint32_t value_c = registers[rc];//*(uint32_t *) UArray_at(registers, rc);
-                perform_io(value_c, opcode);
+                perform_io(value_c, opcode, rc);
         }
         if (opcode == 12) {
                 uint32_t value_b = registers[rb];//*(uint32_t *) UArray_at(registers, rb);
@@ -248,12 +248,12 @@ void perform_seg(uint32_t a, uint32_t b, uint32_t c,
  * Arguments: Value to output and opcode
  * Returns: void
  */
-void perform_io(uint32_t value, uint32_t opcode) {
+void perform_io(uint32_t value, uint32_t opcode, uint32_t c) {
         uint32_t output_val = value;
         if (opcode == 10) {
                 output(output_val);
         } else {
-                input();
+                registers[c] = input();
         }
 }
 
