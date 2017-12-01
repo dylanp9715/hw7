@@ -11,8 +11,9 @@
 #include "instruction_handler.h"
 
 uint32_t registers[8];
+int seg_size = 0;
 
-void store_instruction(UArray_T seg_zero, uint32_t instruction, int open_index);
+void store_instruction(uint32_t *seg_zero, uint32_t instruction, int open_index);
 uint32_t unpack_opcode(uint32_t instruction);
 int call_instruction(uint32_t opcode, Segments *s, 
                       uint32_t curr_instruction);
@@ -28,7 +29,7 @@ void unpack_one_register(uint32_t curr_instruction);
  * Returns: Updated pointer to the Segments struct
  */
 Segments *read_instructions(FILE *fp, char *filename) {
-        int open_index = 0;
+        int open_index = 1;
         Segments *s = malloc(sizeof(Segments));
         s->openID = NULL;
         s->segments = NULL;
@@ -43,7 +44,8 @@ Segments *read_instructions(FILE *fp, char *filename) {
 
         int num_words = fileStat.st_size / 4;
         map_segment(s, num_words);
-        UArray_T seg_zero = (UArray_T) Seq_get(s->segments, 0);
+        //UArray_T seg_zero = (UArray_T) Seq_get(s->segments, 0);
+        uint32_t *seg_zero = (uint32_t *)Seq_get(s->segments, 0);
         for (int i = 0; i < num_words; ++i) {
                 uint32_t word = 0;
                 for (int j = 0; j < 4; j++) {
@@ -51,8 +53,10 @@ Segments *read_instructions(FILE *fp, char *filename) {
                         word = Bitpack_newu(word, 8, 24 - (8 * j), c);
                 }
                 store_instruction(seg_zero, word, open_index);
+                //printf("curr_instruction1: %x\n", seg_zero[i]);
                 open_index++;
         }
+        //s->size_zero = num_words;
         fclose(fp);
         return s;
 }
@@ -62,9 +66,10 @@ Segments *read_instructions(FILE *fp, char *filename) {
  * the instruction into
  * Returns: void
  */
-void store_instruction(UArray_T seg_zero, uint32_t instruction, 
+void store_instruction(uint32_t *seg_zero, uint32_t instruction, 
                        int open_index) {
-        *(uint32_t *) UArray_at(seg_zero, open_index) = instruction;
+        //*(uint32_t *) UArray_at(seg_zero, open_index) = instruction;
+        seg_zero[open_index] = instruction;
 }
 
 /* Purpose: Creates the registers array, updates the program counter, and 
@@ -74,27 +79,43 @@ void store_instruction(UArray_T seg_zero, uint32_t instruction,
  */
 void run_instructions(Segments *s) {
         //UArray_T registers = UArray_new(8, sizeof(uint32_t));
-        int instruction_counter = 0;
-        
-        UArray_T seg_zero = Seq_get(s->segments, 0);
+        int instruction_counter = 1;
+        //printf("here\n");
+        //UArray_T seg_zero = Seq_get(s->segments, 0);
 
-        uint32_t *program_counter = (uint32_t *) UArray_at(seg_zero, 
-                                                     instruction_counter);
-
-        while (instruction_counter < UArray_length(seg_zero)) {
-                uint32_t curr_instruction = *program_counter;
+        uint32_t *seg_zero = Seq_get(s->segments, 0);
+        seg_size = seg_zero[0];//s->size_zero;
+        //printf("here1\n");
+        //uint32_t *program_counter = (uint32_t *) UArray_at(seg_zero, 
+        //                                             instruction_counter);
+        //uint32_t *program_counter = (seg_zero[instruction_counter]);
+        //printf("here2\n");
+        //printf("program_counter: %x\n", *program_counter);
+        //printf("seg_size: %d\n", seg_size);
+        while (instruction_counter < seg_size + 1) {
+                uint32_t curr_instruction = seg_zero[instruction_counter];
+                //printf("curr_instruction2: %x\n", seg_zero[instruction_counter]);
                 uint32_t opcode = unpack_opcode(curr_instruction);
                 int new_counter = call_instruction(opcode, s, 
                                                    curr_instruction);
+                //printf("new_counter: %d\n", new_counter);
+                //int new_counter = -1;
+                //printf("instruction_counter f: %d\n", instruction_counter);
                 if (new_counter != -1) {
+                        //printf("instruction_counter b: %d\n", instruction_counter);
                         instruction_counter = new_counter;
+                        //printf("instruction_counter a: %d\n", instruction_counter);
                         seg_zero = Seq_get(s->segments, 0);
                 }
                 else {
                         instruction_counter++;
                 }
-                program_counter = (uint32_t *) UArray_at(seg_zero, 
-                                                     instruction_counter);
+                //printf("instruction_counter: %d\n", instruction_counter);
+                // printf("seg_size: %d\n", seg_size);
+                //printf("curr_instruction2: %x\n", seg_zero[instruction_counter ]);
+                //program_counter = (uint32_t *) UArray_at(seg_zero, 
+                //                                     instruction_counter);
+                //program_counter = seg_zero[instruction_counter];
         }
 }
 
@@ -155,7 +176,7 @@ int call_instruction(uint32_t opcode, Segments *s,
                 uint32_t value_b = registers[rb];//*(uint32_t *) UArray_at(registers, rb);
                 uint32_t value_c = registers[rc];//*(uint32_t *) UArray_at(registers, rc);
                 load_program(s, value_b, value_c);
-                c = value_c;
+                c = value_c + 1;
         }
         return c;
 }
@@ -206,11 +227,13 @@ void perform_seg(uint32_t a, uint32_t b, uint32_t c,
         uint32_t value_c = registers[c];//*(uint32_t *) UArray_at(registers, c);
         if (opcode == 1) {
                 //*(uint32_t *) UArray_at(registers, a) = 
-                registers[a] = segment_load(s, value_b, value_c);  
+                //printf("b, c, a: %d, %d, %d\n", value_b, value_c, a);
+                registers[a] = segment_load(s, value_b , value_c+1);  
         }
         else if (opcode == 2) {
                 uint32_t segmentID = value_a;
-                segment_store(s, segmentID, value_b, value_c);
+                //printf("offset: %d\n", value_c);
+                segment_store(s, segmentID, value_b+1, value_c);
         }
         else if (opcode == 8) {
                 //*(uint32_t *) UArray_at(registers, b) = 
@@ -241,16 +264,29 @@ void perform_io(uint32_t value, uint32_t opcode) {
 void load_program(Segments *s, uint32_t b, uint32_t c) {
         (void) c;
         if (b != 0) {
-                UArray_T sz = (UArray_T)(Seq_get(s->segments, 0));
-                UArray_free(&sz);
-                UArray_T temp = (UArray_T)Seq_get(s->segments, b);
-                UArray_T copy_seg = UArray_new(UArray_length(temp), 
-                                               sizeof(uint32_t));
-                for (int i = 0; i < UArray_length(temp); i++){
-                        *(uint32_t *)UArray_at(copy_seg, i) = 
-                                *(uint32_t * )UArray_at(temp, i);
+                //UArray_T sz = (UArray_T)(Seq_get(s->segments, 0));
+                uint32_t *seg_zero = (uint32_t *)Seq_get(s->segments, 0);
+                //printf("instruct 1: %x\n", seg_zero[0]);
+                free(seg_zero);
+                //UArray_free(&sz);
+                //UArray_T temp = (UArray_T)Seq_get(s->segments, b);
+                uint32_t *temp = (uint32_t *)Seq_get(s->segments, b);
+                //UArray_T copy_seg = UArray_new(UArray_length(temp), 
+                //                               sizeof(uint32_t));
+                uint32_t *copy_seg = malloc(sizeof(uint32_t) * (temp[0]+1));
+                int temp_size = temp[0];
+                // for (unsigned j = 1; j < (temp[0]+1); j++){
+                //         printf("instruction: %x\n", temp[j]);
+                // }
+                //printf("temp_size: %d\n", temp_size);
+                for (int i = 0; i < temp_size + 1; i++){
+                        //*(uint32_t *)UArray_at(copy_seg, i) = 
+                        //        *(uint32_t * )UArray_at(temp, i);
+                        copy_seg[i] = temp[i];
+                        //printf("temp i: %x\n", temp[i]);
                 }
+                //printf("seg_size: %d\n", seg_size);
+                seg_size = temp[0];
                 Seq_put(s->segments, 0, copy_seg);
-
         }
 }
