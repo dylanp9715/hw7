@@ -25,9 +25,9 @@
 #include "bitpack.h"
 
 
-Segments *read_instructions(FILE *fp, char *filename);
-void run_instructions(Segments *s);
-void load_value(uint32_t curr_instruction, UArray_T registers);
-void load_program(Segments *s, uint32_t b, uint32_t c);
+uint32_t **read_instructions(FILE *fp, char *filename);
+void run_instructions();
+void load_value(uint32_t curr_instruction);
+void load_program(uint32_t b, uint32_t c);
 
 #endif
